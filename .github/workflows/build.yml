@@ -1,4 +1,4 @@
-name: "Build NetHunter Kernel - gta4xl"
+name: "Build NetHunter Kernel - gta4xl (Final with IKCONFIG)"
 
 env:
   CONFIGURATION: "repos.json"
@@ -129,14 +129,14 @@ jobs:
         run: |
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-      - name: "🏴‍☠️ Full NetHunter Configuration"
+      - name: "🏴‍☠️ Full NetHunter Configuration (with IKCONFIG)"
         working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "=== Applying complete NetHunter feature set + IKCONFIG ==="
+          echo "=== Applying NetHunter features + IKCONFIG ==="
 
-          # 1. ВИДИМОСТЬ ЯДРА ДЛЯ ПРИЛОЖЕНИЯ NETHUNTER
+          # 1. ВИДИМОСТЬ ЯДРА ДЛЯ NETHUNTER (обязательно)
           echo "CONFIG_IKCONFIG=y" >> .config
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
 
@@ -144,7 +144,7 @@ jobs:
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
-          # 3. Беспроводной стек + мониторный режим
+          # 3. Беспроводной стек + монитор/инжекция
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -154,7 +154,7 @@ jobs:
           echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
           echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
-          # 4. Wi-Fi адаптеры
+          # 4. Wi-Fi адаптеры (Atheros, Ralink, Realtek, ZyDAS, MediaTek)
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
           echo "CONFIG_CARL9170=y" >> .config
@@ -199,7 +199,13 @@ jobs:
           echo "CONFIG_BPF=y" >> .config
           echo "CONFIG_BPF_SYSCALL=y" >> .config
 
-          # Завершаем конфигурацию, разрешаем зависимости
+          # 9. Bluetooth (базовый, гарантированно работающий)
+          echo "CONFIG_BT=y" >> .config
+          echo "CONFIG_BT_RFCOMM=y" >> .config
+          echo "CONFIG_BT_HIDP=y" >> .config
+          echo "CONFIG_BT_HCIBTUSB=y" >> .config
+
+          # Применить и разрешить зависимости
           cd ../${{ env.kernelName }}
           make ${{ env.args }} olddefconfig
 
@@ -209,6 +215,14 @@ jobs:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
           make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan | TG: @Licifer_Exe" KBUILD_BUILD_HOST="NetHunter"
+
+      - name: "📄 Upload kernel config"
+        uses: actions/upload-artifact@v4
+        with:
+          name: config(${{ env.kernelDevice }}-${{ env.kernelName }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: "💛 Upload Image"
         uses: actions/upload-artifact@v4
