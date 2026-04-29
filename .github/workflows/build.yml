@@ -1,4 +1,4 @@
-name: "Build NetHunter Kernel - gta4xl (Full)"
+name: "Build NetHunter Kernel - gta4xl"
 
 env:
   CONFIGURATION: "repos.json"
@@ -49,7 +49,7 @@ jobs:
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip \
+          sudo apt-get install -y build-essential bc curl git zip ftp \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev \
             lftp zstd wget libfl-dev python3 libarchive-tools jq
 
@@ -117,6 +117,7 @@ jobs:
             rm -rf "./drivers/kernelsu"
           fi
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+
           echo -e "\nCONFIG_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "\nCONFIG_HAVE_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
           echo -e "\nCONFIG_KPROBE_EVENTS=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
@@ -133,17 +134,17 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "=== Applying FULL NetHunter feature set ==="
+          echo "=== Applying complete NetHunter feature set + IKCONFIG + Bluetooth ==="
 
-          # 1. Видимость ядра приложением
+          # 1. ВИДИМОСТЬ ЯДРА ДЛЯ ПРИЛОЖЕНИЯ NETHUNTER (ОБЯЗАТЕЛЬНО)
           echo "CONFIG_IKCONFIG=y" >> .config
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
 
-          # 2. Стековый протектор
+          # 2. Стек протектора
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
-          # 3. Беспроводной стек + монитор/инжекция
+          # 3. Беспроводной стек + мониторный режим
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -153,7 +154,7 @@ jobs:
           echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
           echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
-          # 4. Wi-Fi чипы (USB)
+          # 4. Wi-Fi адаптеры
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
           echo "CONFIG_CARL9170=y" >> .config
@@ -169,7 +170,7 @@ jobs:
           echo "CONFIG_MT76x2U=y" >> .config
           echo "CONFIG_MT76x2U_DEBUGFS=y" >> .config
 
-          # 5. USB-гаджеты и BadUSB
+          # 5. USB-гаджеты и BadUSB/HID
           echo "CONFIG_USB_GADGET=y" >> .config
           echo "CONFIG_USB_CONFIGFS=y" >> .config
           echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
@@ -198,24 +199,17 @@ jobs:
           echo "CONFIG_BPF=y" >> .config
           echo "CONFIG_BPF_SYSCALL=y" >> .config
 
-          # 9. Bluetooth (полный стек + USB-адаптеры)
+          # 9. BLUETOOTH (полноценный стек, только проверенные опции)
           echo "CONFIG_BT=y" >> .config
           echo "CONFIG_BT_RFCOMM=y" >> .config
           echo "CONFIG_BT_HIDP=y" >> .config
           echo "CONFIG_BT_HCIBTUSB=y" >> .config
           echo "CONFIG_BT_HCIBTUSB_BCM=y" >> .config
           echo "CONFIG_BT_HCIBTUSB_RTL=y" >> .config
-          echo "CONFIG_BT_HCIBCM203X=y" >> .config
-          echo "CONFIG_BT_HCIBPA10X=y" >> .config
           echo "CONFIG_BT_HCIBFUSB=y" >> .config
           echo "CONFIG_BT_HCIVHCI=y" >> .config
 
-          # 10. SDR (RTL-SDR, HackRF)
-          echo "CONFIG_USB_RTL2832U=y" >> .config
-          echo "CONFIG_RTL2832U=y" >> .config
-          echo "CONFIG_USB_HACKRF=y" >> .config
-
-          # Применить изменения и разрешить зависимости
+          # Завершаем конфигурацию, разрешаем зависимости
           cd ../${{ env.kernelName }}
           make ${{ env.args }} olddefconfig
 
