@@ -134,13 +134,13 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "=== Applying complete NetHunter feature set + IKCONFIG + Bluetooth ==="
+          echo "=== Applying complete NetHunter feature set + IKCONFIG ==="
 
-          # 1. ВИДИМОСТЬ ЯДРА ДЛЯ ПРИЛОЖЕНИЯ NETHUNTER (ОБЯЗАТЕЛЬНО)
+          # 1. ВИДИМОСТЬ ЯДРА ДЛЯ ПРИЛОЖЕНИЯ NETHUNTER
           echo "CONFIG_IKCONFIG=y" >> .config
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
 
-          # 2. Стек протектора
+          # 2. Стековый протектор
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
@@ -199,16 +199,6 @@ jobs:
           echo "CONFIG_BPF=y" >> .config
           echo "CONFIG_BPF_SYSCALL=y" >> .config
 
-          # 9. BLUETOOTH (полноценный стек, только проверенные опции)
-          echo "CONFIG_BT=y" >> .config
-          echo "CONFIG_BT_RFCOMM=y" >> .config
-          echo "CONFIG_BT_HIDP=y" >> .config
-          echo "CONFIG_BT_HCIBTUSB=y" >> .config
-          echo "CONFIG_BT_HCIBTUSB_BCM=y" >> .config
-          echo "CONFIG_BT_HCIBTUSB_RTL=y" >> .config
-          echo "CONFIG_BT_HCIBFUSB=y" >> .config
-          echo "CONFIG_BT_HCIVHCI=y" >> .config
-
           # Завершаем конфигурацию, разрешаем зависимости
           cd ../${{ env.kernelName }}
           make ${{ env.args }} olddefconfig
@@ -218,7 +208,7 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan" KBUILD_BUILD_HOST="NetHunter"
+          make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan | TG: @Licifer_Exe" KBUILD_BUILD_HOST="NetHunter"
 
       - name: "💛 Upload Image"
         uses: actions/upload-artifact@v4
