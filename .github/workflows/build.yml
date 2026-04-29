@@ -39,7 +39,7 @@ jobs:
       kernelRepo: ${{ matrix.repos.kernelSource.repo }}
       kernelBranch: ${{ matrix.repos.kernelSource.branch }}
       kernelDevice: ${{ matrix.repos.kernelSource.device }}
-      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.defconfig || format('{0}_defconfig', matrix.repos.kernelSource.device) }}
+      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.device }}_defconfig
       withKernelSU: ${{ matrix.repos.withKernelSU }}
 
     steps:
@@ -49,7 +49,7 @@ jobs:
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip \
+          sudo apt-get install -y build-essential bc curl git zip ftp \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev \
             lftp zstd wget libfl-dev python3 libarchive-tools jq
 
@@ -69,121 +69,136 @@ jobs:
             repo=$(echo $toolchains | jq -r ".[$i].repo")
             branch=$(echo $toolchains | jq -r ".[$i].branch")
             git clone --recursive --branch $branch $repo $name --depth=1
+            echo "$(pwd)/$name/" >> $GITHUB_PATH
             echo "$(pwd)/$name/bin" >> $GITHUB_PATH
           done
 
-      - name: "😎 Set build arguments"
+      - name: "😎 Set args"
         id: generate-args
         working-directory: ./${{ env.kernelDir }}
         env:
           params: "${{ toJSON(matrix.repos.params) }}"
+          extraParams: "${{ toJSON(matrix.repos.extraParams) }}"
         run: |
           ARCH=$(echo $params | jq -r ".ARCH")
           CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
-          CROSS_COMPILE_ARM32=$(echo $params | jq -r ".CROSS_COMPILE_ARM32 // empty")
-          CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE // empty")
-          CC=$(echo $params | jq -r ".CC // empty")
+          CROSS_COMPILE_COMPAT=$(echo $params | jq -r ".CROSS_COMPILE_COMPAT")
+          CROSS_COMPILE_ARM32=$(echo $params | jq -r ".CROSS_COMPILE_ARM32")
+          CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE")
+          AR=$(echo $params | jq -r ".AR")
+          CC=$(echo $params | jq -r ".CC")
 
           echo "ARCH=$ARCH" >> $GITHUB_ENV
-          echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
-          echo "CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32" >> $GITHUB_ENV
-          echo "CLANG_TRIPLE=$CLANG_TRIPLE" >> $GITHUB_ENV
-          echo "CC=$CC" >> $GITHUB_ENV
 
-          args="-j$(nproc --all) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE"
-          [ -n "$CROSS_COMPILE_ARM32" ] && args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
-          [ -n "$CLANG_TRIPLE" ] && args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
-          [ -n "$CC" ] && args="$args CC=$CC"
-
+          args="-j$(nproc --all)"
           if [ -n "$OUT_DIR" ]; then
             mkdir -p "$(pwd)/$OUT_DIR"
             args="$args O=$(pwd)/$OUT_DIR"
           fi
-          echo "args=$args" >> $GITHUB_OUTPUT
+          [ -n "$ARCH" ] && args="$args ARCH=$ARCH"
+          [ -n "$CROSS_COMPILE" ] && args="$args CROSS_COMPILE=$CROSS_COMPILE"
+          [ -n "$CLANG_TRIPLE" ] && args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
+          [ -n "$CROSS_COMPILE_COMPAT" ] && args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_COMPAT"
+          [ -n "$CROSS_COMPILE_ARM32" ] && args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
+          [ -n "$AR" ] && args="$args AR=$AR"
+          [ -n "$CC" ] && args="$args CC=$CC"
+
+          # Дополнительные параметры из extraParams (если будут)
+          extra_params=$(echo $extraParams | jq -r ' to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr "\n" " " | sed 's/ $//')
+          echo "args=$args $extra_params" >> $GITHUB_OUTPUT
 
       - name: "😋 Update KernelSU"
         working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         if: ${{ env.withKernelSU == 'true' }}
         run: |
+          if [ -d "./KernelSU" ]; then
+            rm -rf "./KernelSU"
+          fi
+          if [ -d "./drivers/kernelsu" ]; then
+            rm -rf "./drivers/kernelsu"
+          fi
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-      - name: "🧹 Clean source tree (mrproper)"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        run: |
-          echo "Cleaning kernel source..."
-          make mrproper
+          # Добавляем нужные конфиги для KernelSU в defconfig
+          echo -e "\nCONFIG_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "\nCONFIG_HAVE_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+          echo -e "\nCONFIG_KPROBE_EVENTS=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
 
       - name: "🛠️ Make defconfig"
         working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "⚙️  Using defconfig: ${{ env.DEFCONFIG_NAME }}"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
       - name: "🏴‍☠️ Full NetHunter Configuration"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "Applying full NetHunter feature set..."
+          echo "=== Applying complete NetHunter feature set ==="
 
-          # Стековый протектор
-          scripts/config --disable CONFIG_CC_STACKPROTECTOR_STRONG || true
-          scripts/config --enable CONFIG_CC_STACKPROTECTOR_NONE   || true
+          # Стек протектора (важно для многих ядер)
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
-          # Беспроводная сеть
-          scripts/config --enable CONFIG_WIRELESS
-          scripts/config --enable CONFIG_CFG80211
-          scripts/config --enable CONFIG_MAC80211
-          scripts/config --enable CONFIG_CFG80211_WEXT
-          scripts/config --enable CONFIG_MAC80211_RC_DEFAULT_MINSTREL
-          scripts/config --enable CONFIG_MAC80211_MESH
-          scripts/config --enable CONFIG_CFG80211_DEBUGFS
-          scripts/config --enable CONFIG_MAC80211_DEBUGFS
+          # Беспроводной стек + мониторный режим
+          echo "CONFIG_WIRELESS=y" >> .config
+          echo "CONFIG_CFG80211=y" >> .config
+          echo "CONFIG_MAC80211=y" >> .config
+          echo "CONFIG_CFG80211_WEXT=y" >> .config
+          echo "CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y" >> .config
+          echo "CONFIG_MAC80211_MESH=y" >> .config
+          echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
+          echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
-          # USB Wi-Fi адаптеры
-          scripts/config --enable CONFIG_ATH_COMMON
-          scripts/config --enable CONFIG_ATH9K_HTC
-          scripts/config --enable CONFIG_CARL9170
-          scripts/config --enable CONFIG_RT2X00
-          scripts/config --enable CONFIG_RT2800USB
-          scripts/config --enable CONFIG_RT2800USB_RT53XX
-          scripts/config --enable CONFIG_RT2800USB_UNKNOWN
-          scripts/config --enable CONFIG_RTL8187
-          scripts/config --enable CONFIG_RTL8192CU
-          scripts/config --enable CONFIG_RTL8XXXU
-          scripts/config --enable CONFIG_RTL8192EU
-          scripts/config --enable CONFIG_ZD1211RW
-          scripts/config --enable CONFIG_MT76x2U
-          scripts/config --enable CONFIG_MT76x2U_DEBUGFS
+          # Wi-Fi адаптеры (Atheros, Ralink, Realtek, ZyDAS, MediaTek)
+          echo "CONFIG_ATH_COMMON=y" >> .config
+          echo "CONFIG_ATH9K_HTC=y" >> .config
+          echo "CONFIG_CARL9170=y" >> .config
+          echo "CONFIG_RT2X00=y" >> .config
+          echo "CONFIG_RT2800USB=y" >> .config
+          echo "CONFIG_RT2800USB_RT53XX=y" >> .config
+          echo "CONFIG_RT2800USB_UNKNOWN=y" >> .config
+          echo "CONFIG_RTL8187=y" >> .config
+          echo "CONFIG_RTL8192CU=y" >> .config
+          echo "CONFIG_RTL8XXXU=y" >> .config
+          echo "CONFIG_RTL8192EU=y" >> .config
+          echo "CONFIG_ZD1211RW=y" >> .config
+          echo "CONFIG_MT76x2U=y" >> .config
+          echo "CONFIG_MT76x2U_DEBUGFS=y" >> .config
 
-          # USB Gadgets (BadUSB/HID)
-          scripts/config --enable CONFIG_USB_GADGET
-          scripts/config --enable CONFIG_USB_CONFIGFS
-          scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
-          scripts/config --enable CONFIG_USB_G_HID
+          # USB-гаджеты и BadUSB/HID
+          echo "CONFIG_USB_GADGET=y" >> .config
+          echo "CONFIG_USB_CONFIGFS=y" >> .config
+          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
+          echo "CONFIG_USB_G_HID=y" >> .config
+          echo "CONFIG_USB_G_ANDROID=y" >> .config
+          echo "CONFIG_OF_CONFIGFS=y" >> .config
+          echo "CONFIG_OF_OVERLAY=y" >> .config
 
-          # Сетевые утилиты
-          scripts/config --enable CONFIG_BRIDGE
-          scripts/config --enable CONFIG_VETH
-          scripts/config --enable CONFIG_TUN
-          scripts/config --enable CONFIG_NETFILTER
-          scripts/config --enable CONFIG_NF_CONNTRACK
-          scripts/config --enable CONFIG_IP_NF_IPTABLES
-          scripts/config --enable CONFIG_NETFILTER_XT_MATCH_STATE
+          # Сетевые инструменты
+          echo "CONFIG_BRIDGE=y" >> .config
+          echo "CONFIG_VETH=y" >> .config
+          echo "CONFIG_TUN=y" >> .config
+          echo "CONFIG_NETFILTER=y" >> .config
+          echo "CONFIG_NF_CONNTRACK=y" >> .config
+          echo "CONFIG_IP_NF_IPTABLES=y" >> .config
+          echo "CONFIG_NETFILTER_XT_MATCH_STATE=y" >> .config
 
           # Файловые системы
-          scripts/config --enable CONFIG_EXT4_FS
-          scripts/config --enable CONFIG_VFAT_FS
-          scripts/config --enable CONFIG_EXFAT_FS
-          scripts/config --enable CONFIG_NTFS_FS
-          scripts/config --enable CONFIG_OVERLAY_FS
+          echo "CONFIG_EXT4_FS=y" >> .config
+          echo "CONFIG_VFAT_FS=y" >> .config
+          echo "CONFIG_EXFAT_FS=y" >> .config
+          echo "CONFIG_NTFS_FS=y" >> .config
+          echo "CONFIG_OVERLAY_FS=y" >> .config
 
-          # BPF
-          scripts/config --enable CONFIG_BPF
-          scripts/config --enable CONFIG_BPF_SYSCALL
+          # BPF (для современных инструментов)
+          echo "CONFIG_BPF=y" >> .config
+          echo "CONFIG_BPF_SYSCALL=y" >> .config
 
+          # Разрешаем зависимости (запускаем из исходников с O=out)
+          cd ../${{ env.kernelName }}
           make ${{ env.args }} olddefconfig
 
       - name: "🎶 Build kernel"
@@ -191,11 +206,36 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          make ${{ env.args }} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan" KBUILD_BUILD_HOST="NetHunter"
+          make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan" KBUILD_BUILD_HOST="NetHunter"
+
+      - name: "💛 Upload Image"
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
         with:
-          name: NetHunter-Kernel-${{ env.kernelDevice }}
+          name: Image.gz(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
           path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
           if-no-files-found: ignore
+          retention-days: 7
+
+      - name: "💜 Upload dtb"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtb(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: "❤️ Upload dtbo.img"
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtbo.img(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
+          if-no-files-found: ignore
+          retention-days: 7
