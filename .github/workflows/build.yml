@@ -16,8 +16,10 @@ jobs:
     steps:
       - name: "😄 Checkout"
         uses: actions/checkout@v4
+
       - name: "Print repos.json"
         run: cat ${{ env.CONFIGURATION }}
+
       - name: "😆 Generate Matrix"
         id: generate-matrix
         run: |
@@ -26,15 +28,15 @@ jobs:
   Build-Kernel:
     name: "🐎 Build kernel"
     runs-on: ubuntu-latest
-    needs:
-      - Set-repos
+    needs: Set-repos
     strategy:
       max-parallel: 2
       fail-fast: false
       matrix:
         repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
+
     env:
-      kernelDir: ${{ matrix.repos.kernelSource.name }}_${{ matrix.repos.kernelSource.device }}
+      kernelDir: \( {{ matrix.repos.kernelSource.name }}_ \){{ matrix.repos.kernelSource.device }}
       kernelName: ${{ matrix.repos.kernelSource.name }}
       kernelRepo: ${{ matrix.repos.kernelSource.repo }}
       kernelBranch: ${{ matrix.repos.kernelSource.branch }}
@@ -49,14 +51,18 @@ jobs:
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip ftp \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev \
-            lftp zstd wget libfl-dev python3 libarchive-tools jq
+          sudo apt-get install -y \
+            build-essential bc curl git zip unzip ftp \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            libssl-dev lftp zstd wget libfl-dev python3 \
+            libarchive-tools jq ccache bison flex \
+            android-sdk-platform-tools-common
 
       - name: "🌟 Clone kernel source"
         working-directory: ./${{ env.kernelDir }}
         run: |
-          git clone --recursive --branch ${{ env.kernelBranch }} ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
+          git clone --recursive --branch ${{ env.kernelBranch }} \
+            ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
 
       - name: "💫 Get toolchains"
         working-directory: ./${{ env.kernelDir }}
@@ -64,16 +70,15 @@ jobs:
           toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
         run: |
           toolchains_num="$(echo $toolchains | jq 'length')"
-          for ((i=0;i<toolchains_num;i++)); do
+          for ((i=0; i<toolchains_num; i++)); do
             name=$(echo $toolchains | jq -r ".[$i].name")
             repo=$(echo $toolchains | jq -r ".[$i].repo")
             branch=$(echo $toolchains | jq -r ".[$i].branch")
-            git clone --recursive --branch $branch $repo $name --depth=1
-            echo "$(pwd)/$name/" >> $GITHUB_PATH
+            git clone --recursive --branch "$branch" "$repo" "$name" --depth=1
             echo "$(pwd)/$name/bin" >> $GITHUB_PATH
           done
 
-      - name: "😎 Set args"
+      - name: "😎 Set build args"
         id: generate-args
         working-directory: ./${{ env.kernelDir }}
         env:
@@ -91,10 +96,11 @@ jobs:
           echo "ARCH=$ARCH" >> $GITHUB_ENV
 
           args="-j$(nproc --all)"
-          if [ -n "$OUT_DIR" ]; then
-            mkdir -p "$(pwd)/$OUT_DIR"
-            args="$args O=$(pwd)/$OUT_DIR"
+          if [ -n "${OUT_DIR}" ]; then
+            mkdir -p "\( (pwd)/ \){OUT_DIR}"
+            args="\( args O= \)(pwd)/${OUT_DIR}"
           fi
+
           [ -n "$ARCH" ] && args="$args ARCH=$ARCH"
           [ -n "$CROSS_COMPILE" ] && args="$args CROSS_COMPILE=$CROSS_COMPILE"
           [ -n "$CLANG_TRIPLE" ] && args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
@@ -103,138 +109,141 @@ jobs:
           [ -n "$AR" ] && args="$args AR=$AR"
           [ -n "$CC" ] && args="$args CC=$CC"
 
-          extra_params=$(echo $extraParams | jq -r ' to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr "\n" " " | sed 's/ $//')
+          extra_params=$(echo $extraParams | jq -r 'to_entries[] | select(.value != "") | "\(.key)=\(.value)"' | tr "\n" " " | sed 's/ $//')
           echo "args=$args $extra_params" >> $GITHUB_OUTPUT
 
       - name: "😋 Update KernelSU"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
         if: ${{ env.withKernelSU == 'true' }}
         run: |
-          if [ -d "./KernelSU" ]; then
-            rm -rf "./KernelSU"
-          fi
-          if [ -d "./drivers/kernelsu" ]; then
-            rm -rf "./drivers/kernelsu"
-          fi
+          rm -rf ./KernelSU ./drivers/kernelsu 2>/dev/null || true
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-          echo -e "\nCONFIG_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "\nCONFIG_HAVE_KPROBES=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
-          echo -e "\nCONFIG_KPROBE_EVENTS=y" >> ./arch/${{ env.ARCH }}/configs/${{ env.DEFCONFIG_NAME }}
+          cat >> ./arch/\( {{ env.ARCH }}/configs/ \){{ env.DEFCONFIG_NAME }} << EOF
+
+          # KernelSU requirements
+          CONFIG_KPROBES=y
+          CONFIG_HAVE_KPROBES=y
+          CONFIG_KPROBE_EVENTS=y
+          EOF
 
       - name: "🛠️ Make defconfig"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
-          args: ${{ steps.generate-args.outputs.args }}
+          ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
-          make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
+          make $ARGS ${{ env.DEFCONFIG_NAME }}
 
       - name: "🏴‍☠️ Full NetHunter Configuration (merge)"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
-          args: ${{ steps.generate-args.outputs.args }}
+          ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "=== Creating NetHunter fragment and merging ==="
+          echo "=== Creating and merging NetHunter fragment ==="
+
           cat > nethunter_fragment.config << 'EOF'
-CONFIG_IKCONFIG=y
-CONFIG_IKCONFIG_PROC=y
-CONFIG_CC_STACKPROTECTOR_NONE=y
-# CONFIG_CC_STACKPROTECTOR_STRONG is not set
-CONFIG_WIRELESS=y
-CONFIG_CFG80211=y
-CONFIG_MAC80211=y
-CONFIG_CFG80211_WEXT=y
-CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
-CONFIG_MAC80211_MESH=y
-CONFIG_CFG80211_DEBUGFS=y
-CONFIG_MAC80211_DEBUGFS=y
-CONFIG_ATH_COMMON=y
-CONFIG_ATH9K_HTC=y
-CONFIG_CARL9170=y
-CONFIG_RT2X00=y
-CONFIG_RT2800USB=y
-CONFIG_RT2800USB_RT53XX=y
-CONFIG_RT2800USB_UNKNOWN=y
-CONFIG_RTL8187=y
-CONFIG_RTL8192CU=y
-CONFIG_RTL8XXXU=y
-CONFIG_RTL8192EU=y
-CONFIG_ZD1211RW=y
-CONFIG_MT76x2U=y
-CONFIG_MT76x2U_DEBUGFS=y
-CONFIG_USB_GADGET=y
-CONFIG_USB_CONFIGFS=y
-CONFIG_USB_CONFIGFS_F_HID=y
-CONFIG_USB_G_HID=y
-CONFIG_USB_G_ANDROID=y
-CONFIG_OF_CONFIGFS=y
-CONFIG_OF_OVERLAY=y
-CONFIG_BRIDGE=y
-CONFIG_VETH=y
-CONFIG_TUN=y
-CONFIG_NETFILTER=y
-CONFIG_NF_CONNTRACK=y
-CONFIG_IP_NF_IPTABLES=y
-CONFIG_NETFILTER_XT_MATCH_STATE=y
-CONFIG_EXT4_FS=y
-CONFIG_VFAT_FS=y
-CONFIG_EXFAT_FS=y
-CONFIG_NTFS_FS=y
-CONFIG_OVERLAY_FS=y
-CONFIG_BPF=y
-CONFIG_BPF_SYSCALL=y
-CONFIG_BT=y
-CONFIG_BT_RFCOMM=y
-CONFIG_BT_HIDP=y
-CONFIG_BT_HCIBTUSB=y
-EOF
-          # Безопасное слияние фрагмента с текущим .config
+          CONFIG_IKCONFIG=y
+          CONFIG_IKCONFIG_PROC=y
+          CONFIG_CC_STACKPROTECTOR_NONE=y
+          # CONFIG_CC_STACKPROTECTOR_STRONG is not set
+          CONFIG_WIRELESS=y
+          CONFIG_CFG80211=y
+          CONFIG_MAC80211=y
+          CONFIG_CFG80211_WEXT=y
+          CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y
+          CONFIG_MAC80211_MESH=y
+          CONFIG_CFG80211_DEBUGFS=y
+          CONFIG_MAC80211_DEBUGFS=y
+          CONFIG_ATH_COMMON=y
+          CONFIG_ATH9K_HTC=y
+          CONFIG_CARL9170=y
+          CONFIG_RT2X00=y
+          CONFIG_RT2800USB=y
+          CONFIG_RT2800USB_RT53XX=y
+          CONFIG_RT2800USB_UNKNOWN=y
+          CONFIG_RTL8187=y
+          CONFIG_RTL8192CU=y
+          CONFIG_RTL8XXXU=y
+          CONFIG_RTL8192EU=y
+          CONFIG_ZD1211RW=y
+          CONFIG_MT76x2U=y
+          CONFIG_MT76x2U_DEBUGFS=y
+          CONFIG_USB_GADGET=y
+          CONFIG_USB_CONFIGFS=y
+          CONFIG_USB_CONFIGFS_F_HID=y
+          CONFIG_USB_G_HID=y
+          CONFIG_USB_G_ANDROID=y
+          CONFIG_OF_CONFIGFS=y
+          CONFIG_OF_OVERLAY=y
+          CONFIG_BRIDGE=y
+          CONFIG_VETH=y
+          CONFIG_TUN=y
+          CONFIG_NETFILTER=y
+          CONFIG_NF_CONNTRACK=y
+          CONFIG_IP_NF_IPTABLES=y
+          CONFIG_NETFILTER_XT_MATCH_STATE=y
+          CONFIG_EXT4_FS=y
+          CONFIG_VFAT_FS=y
+          CONFIG_EXFAT_FS=y
+          CONFIG_NTFS_FS=y
+          CONFIG_OVERLAY_FS=y
+          CONFIG_BPF=y
+          CONFIG_BPF_SYSCALL=y
+          CONFIG_BT=y
+          CONFIG_BT_RFCOMM=y
+          CONFIG_BT_HIDP=y
+          CONFIG_BT_HCIBTUSB=y
+          EOF
+
           ./scripts/kconfig/merge_config.sh -m -r ${{ env.OUT_DIR }}/.config nethunter_fragment.config
-          make ${{ env.args }} olddefconfig
+          make $ARGS olddefconfig
 
       - name: "🎶 Build kernel"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
+        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
-          args: ${{ steps.generate-args.outputs.args }}
+          ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
-          make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan | TG: @Licifer_Exe" KBUILD_BUILD_HOST="NetHunter"
+          make $ARGS KCFLAGS="-Wno-error" \
+            KBUILD_BUILD_USER="Nursultan | TG: @Licifer_Exe" \
+            KBUILD_BUILD_HOST="NetHunter"
 
+      # ==================== Upload artifacts ====================
       - name: "📄 Upload kernel config"
         uses: actions/upload-artifact@v4
         with:
-          name: config(${{ env.kernelDevice }}-${{ env.kernelName }})
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/.config
+          name: config(\( {{ env.kernelDevice }}- \){{ env.kernelName }})
+          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/.config
           if-no-files-found: ignore
           retention-days: 7
 
       - name: "💛 Upload Image"
         uses: actions/upload-artifact@v4
         with:
-          name: Image(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+          name: Image(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
           if-no-files-found: ignore
           retention-days: 7
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
         with:
-          name: Image.gz(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+          name: Image.gz(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
           if-no-files-found: ignore
           retention-days: 7
 
       - name: "💜 Upload dtb"
         uses: actions/upload-artifact@v4
         with:
-          name: dtb(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
+          name: dtb(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
           if-no-files-found: ignore
           retention-days: 7
 
       - name: "❤️ Upload dtbo.img"
         uses: actions/upload-artifact@v4
         with:
-          name: dtbo.img(${{ env.kernelDevice }}-${{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
+          name: dtbo.img(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
+          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
           if-no-files-found: ignore
           retention-days: 7
