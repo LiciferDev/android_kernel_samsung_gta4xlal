@@ -39,22 +39,25 @@ jobs:
       kernelRepo: ${{ matrix.repos.kernelSource.repo }}
       kernelBranch: ${{ matrix.repos.kernelSource.branch }}
       kernelDevice: ${{ matrix.repos.kernelSource.device }}
-      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.device }}_defconfig
+      # Имя defconfig можно задать явно, иначе формируется по шаблону <устройство>_defconfig
+      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.defconfig || format('{0}_defconfig', matrix.repos.kernelSource.device) }}
       withKernelSU: ${{ matrix.repos.withKernelSU }}
 
     steps:
       - name: "✨ Create working dir"
-        run: mkdir -p $kernelDir
+        run: mkdir -p ${{ env.kernelDir }}
 
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 libarchive-tools jq
+          sudo apt-get install -y build-essential bc curl git zip \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev \
+            lftp zstd wget libfl-dev python3 libarchive-tools jq
 
       - name: "🌟 Clone kernel source"
         working-directory: ./${{ env.kernelDir }}
         run: |
-         git clone --recursive --branch ${{ env.kernelBranch }} ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
+          git clone --recursive --branch ${{ env.kernelBranch }} ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
 
       - name: "💫 Get toolchains"
         working-directory: ./${{ env.kernelDir }}
@@ -80,9 +83,9 @@ jobs:
           CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
           echo "ARCH=$ARCH" >> $GITHUB_ENV
           args="-j$(nproc --all) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE"
-          if [ -n "${{ env.OUT_DIR }}" ]; then
-            mkdir -p $(pwd)/${{ env.OUT_DIR }}
-            args="$args O=$(pwd)/${{ env.OUT_DIR }}"
+          if [ -n "$OUT_DIR" ]; then
+            mkdir -p "$(pwd)/$OUT_DIR"
+            args="$args O=$(pwd)/$OUT_DIR"
           fi
           echo "args=$args" >> $GITHUB_OUTPUT
 
@@ -92,13 +95,12 @@ jobs:
         run: |
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-      - name: "🛠️ Fix Werror & Make defconfig"
+      - name: "🛠️ Make defconfig"
         working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "Nuking -Werror from Makefiles..."
-          find . -type f -name "Makefile" -exec sed -i 's/-Werror//g' {} +
+          echo "⚙️  Используем defconfig: ${{ env.DEFCONFIG_NAME }}"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
       - name: "🏴‍☠️ Inject NetHunter Patches"
@@ -106,7 +108,7 @@ jobs:
           args: ${{ steps.generate-args.outputs.args }}
         working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
         run: |
-          echo "Force enabling Wi-Fi drivers and tools..."
+          echo "Force enabling Wi-Fi drivers..."
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -117,7 +119,11 @@ jobs:
           echo "CONFIG_RT2X00=y" >> .config
           echo "CONFIG_RT2800USB=y" >> .config
           
-          echo "Disabling BadUSB/HID as requested..."
+          echo "Fixing Stack Protector Error..."
+          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
+          
+          echo "Disabling BadUSB / HID gadget..."
           echo "# CONFIG_USB_G_HID is not set" >> .config
           echo "# CONFIG_USB_CONFIGFS_F_HID is not set" >> .config
           
@@ -129,8 +135,7 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          # Собираем с флагом KCFLAGS="-Wno-error", чтобы игнорировать любые конфликты типов
-          make ${args} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan" KBUILD_BUILD_HOST="NetHunter"
+          make ${{ env.args }} KCFLAGS="-Wno-error" KBUILD_BUILD_USER="Nursultan" KBUILD_BUILD_HOST="NetHunter"
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
