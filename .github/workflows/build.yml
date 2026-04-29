@@ -36,7 +36,6 @@ jobs:
         repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
 
     env:
-      kernelDir: \( {{ matrix.repos.kernelSource.name }}_ \){{ matrix.repos.kernelSource.device }}
       kernelName: ${{ matrix.repos.kernelSource.name }}
       kernelRepo: ${{ matrix.repos.kernelSource.repo }}
       kernelBranch: ${{ matrix.repos.kernelSource.branch }}
@@ -45,8 +44,12 @@ jobs:
       withKernelSU: ${{ matrix.repos.withKernelSU }}
 
     steps:
-      - name: "✨ Create working dir"
-        run: mkdir -p ${{ env.kernelDir }}
+      - name: "✨ Create working directory"
+        run: |
+          KERNEL_DIR="\( {{ matrix.repos.kernelSource.name }}_ \){{ matrix.repos.kernelSource.device }}"
+          echo "kernelDir=$KERNEL_DIR" >> $GITHUB_ENV
+          mkdir -p "$KERNEL_DIR"
+          echo "Working directory created: $KERNEL_DIR"
 
       - name: "⭐ Install prerequisites"
         run: |
@@ -55,17 +58,16 @@ jobs:
             build-essential bc curl git zip unzip ftp \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             libssl-dev lftp zstd wget libfl-dev python3 \
-            libarchive-tools jq ccache bison flex \
-            android-sdk-platform-tools-common
+            libarchive-tools jq ccache bison flex
 
       - name: "🌟 Clone kernel source"
-        working-directory: ./${{ env.kernelDir }}
+        working-directory: ${{ env.kernelDir }}
         run: |
           git clone --recursive --branch ${{ env.kernelBranch }} \
             ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
 
       - name: "💫 Get toolchains"
-        working-directory: ./${{ env.kernelDir }}
+        working-directory: ${{ env.kernelDir }}
         env:
           toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
         run: |
@@ -80,7 +82,7 @@ jobs:
 
       - name: "😎 Set build args"
         id: generate-args
-        working-directory: ./${{ env.kernelDir }}
+        working-directory: ${{ env.kernelDir }}
         env:
           params: "${{ toJSON(matrix.repos.params) }}"
           extraParams: "${{ toJSON(matrix.repos.extraParams) }}"
@@ -113,7 +115,7 @@ jobs:
           echo "args=$args $extra_params" >> $GITHUB_OUTPUT
 
       - name: "😋 Update KernelSU"
-        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
+        working-directory: \( {{ env.kernelDir }}/ \){{ env.kernelName }}
         if: ${{ env.withKernelSU == 'true' }}
         run: |
           rm -rf ./KernelSU ./drivers/kernelsu 2>/dev/null || true
@@ -128,14 +130,14 @@ jobs:
           EOF
 
       - name: "🛠️ Make defconfig"
-        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
+        working-directory: \( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
           ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
           make $ARGS ${{ env.DEFCONFIG_NAME }}
 
       - name: "🏴‍☠️ Full NetHunter Configuration (merge)"
-        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
+        working-directory: \( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
           ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
@@ -199,7 +201,7 @@ jobs:
           make $ARGS olddefconfig
 
       - name: "🎶 Build kernel"
-        working-directory: ./\( {{ env.kernelDir }}/ \){{ env.kernelName }}
+        working-directory: \( {{ env.kernelDir }}/ \){{ env.kernelName }}
         env:
           ARGS: ${{ steps.generate-args.outputs.args }}
         run: |
@@ -207,12 +209,12 @@ jobs:
             KBUILD_BUILD_USER="Nursultan | TG: @Licifer_Exe" \
             KBUILD_BUILD_HOST="NetHunter"
 
-      # ==================== Upload artifacts ====================
+      # ==================== Upload Artifacts ====================
       - name: "📄 Upload kernel config"
         uses: actions/upload-artifact@v4
         with:
           name: config(\( {{ env.kernelDevice }}- \){{ env.kernelName }})
-          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/.config
+          path: \( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/.config
           if-no-files-found: ignore
           retention-days: 7
 
@@ -220,7 +222,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Image(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
+          path: \( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image
           if-no-files-found: ignore
           retention-days: 7
 
@@ -228,7 +230,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Image.gz(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+          path: \( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
           if-no-files-found: ignore
           retention-days: 7
 
@@ -236,7 +238,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dtb(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
+          path: \( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtb
           if-no-files-found: ignore
           retention-days: 7
 
@@ -244,6 +246,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dtbo.img(\( {{ env.kernelDevice }}- \){{ env.kernelName }}-${{ env.kernelBranch }})
-          path: ./\( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
+          path: \( {{ env.kernelDir }}/ \){{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/dtbo.img
           if-no-files-found: ignore
           retention-days: 7
