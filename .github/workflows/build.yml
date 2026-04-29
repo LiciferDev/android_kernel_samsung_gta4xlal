@@ -19,18 +19,25 @@ jobs:
 
       - name: "🌟 Clone Source & Toolchain"
         run: |
+          # Вытаскиваем инфу из первого объекта в repos.json
           REPO=$(jq -r '.[0].kernelSource.repo' repos.json)
           BRANCH=$(jq -r '.[0].kernelSource.branch' repos.json)
           echo "Cloning from $REPO branch $BRANCH"
+          
           git clone --depth=1 -b $BRANCH $REPO source
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain
+          
+          # Качаем СОВРЕМЕННЫЙ тулчейн (GCC 10.3), так как старый (4.9) выдал ошибку
+          git clone --depth=1 https://github.com/mvaisakh/gcc-arm64 toolchain
+          
+          # Прописываем путь к новому компилятору
           echo "$(pwd)/toolchain/bin" >> $GITHUB_PATH
 
       - name: "👍 Make defconfig"
         run: |
           DEVICE=$(jq -r '.[0].kernelSource.device' repos.json)
           cd source
-          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- ${DEVICE}_defconfig
+          # Используем новый тулчейн aarch64-elf-
+          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf- ${DEVICE}_defconfig
 
       - name: "🏴‍☠️ NetHunter Wireless Patch"
         run: |
@@ -54,11 +61,9 @@ jobs:
       - name: "🎶 Build kernel"
         run: |
           cd source
-          # ВОТ ТУТ ГЛАВНОЕ ИСПРАВЛЕНИЕ:
-          # Применяем дефолты для новых конфигов, чтобы не было 'aborted'
-          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- olddefconfig
-          # И погнали саму сборку
-          make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-
+          # Применяем дефолты и собираем с новым CROSS_COMPILE
+          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf- olddefconfig
+          make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf-
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
