@@ -1,4 +1,4 @@
-name: "Build kernels"
+name: "Build NetHunter Kernel - gta4xl"
 
 env:
   CONFIGURATION: "repos.json"
@@ -39,7 +39,7 @@ jobs:
       kernelRepo: ${{ matrix.repos.kernelSource.repo }}
       kernelBranch: ${{ matrix.repos.kernelSource.branch }}
       kernelDevice: ${{ matrix.repos.kernelSource.device }}
-      # Имя defconfig можно задать явно, иначе формируется по шаблону <устройство>_defconfig
+      # defconfig по умолчанию строится как <device>_defconfig
       DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.defconfig || format('{0}_defconfig', matrix.repos.kernelSource.device) }}
       withKernelSU: ${{ matrix.repos.withKernelSU }}
 
@@ -73,7 +73,7 @@ jobs:
             echo "$(pwd)/$name/bin" >> $GITHUB_PATH
           done
 
-      - name: "😎 Set args"
+      - name: "😎 Set build arguments"
         id: generate-args
         working-directory: ./${{ env.kernelDir }}
         env:
@@ -81,8 +81,21 @@ jobs:
         run: |
           ARCH=$(echo $params | jq -r ".ARCH")
           CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
+          CROSS_COMPILE_ARM32=$(echo $params | jq -r ".CROSS_COMPILE_ARM32 // empty")
+          CLANG_TRIPLE=$(echo $params | jq -r ".CLANG_TRIPLE // empty")
+          CC=$(echo $params | jq -r ".CC // empty")
+
           echo "ARCH=$ARCH" >> $GITHUB_ENV
+          echo "CROSS_COMPILE=$CROSS_COMPILE" >> $GITHUB_ENV
+          echo "CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32" >> $GITHUB_ENV
+          echo "CLANG_TRIPLE=$CLANG_TRIPLE" >> $GITHUB_ENV
+          echo "CC=$CC" >> $GITHUB_ENV
+
           args="-j$(nproc --all) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE"
+          [ -n "$CROSS_COMPILE_ARM32" ] && args="$args CROSS_COMPILE_ARM32=$CROSS_COMPILE_ARM32"
+          [ -n "$CLANG_TRIPLE" ] && args="$args CLANG_TRIPLE=$CLANG_TRIPLE"
+          [ -n "$CC" ] && args="$args CC=$CC"
+
           if [ -n "$OUT_DIR" ]; then
             mkdir -p "$(pwd)/$OUT_DIR"
             args="$args O=$(pwd)/$OUT_DIR"
@@ -100,34 +113,77 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "⚙️  Используем defconfig: ${{ env.DEFCONFIG_NAME }}"
+          echo "⚙️  Using defconfig: ${{ env.DEFCONFIG_NAME }}"
           make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
 
-      - name: "🏴‍☠️ Inject NetHunter Patches"
+      - name: "🏴‍☠️ Full NetHunter Configuration"
+        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
         env:
           args: ${{ steps.generate-args.outputs.args }}
-        working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
         run: |
-          echo "Force enabling Wi-Fi drivers..."
-          echo "CONFIG_WIRELESS=y" >> .config
-          echo "CONFIG_CFG80211=y" >> .config
-          echo "CONFIG_MAC80211=y" >> .config
-          echo "CONFIG_CFG80211_WEXT=y" >> .config
-          echo "CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y" >> .config
-          echo "CONFIG_ATH_COMMON=y" >> .config
-          echo "CONFIG_ATH9K_HTC=y" >> .config
-          echo "CONFIG_RT2X00=y" >> .config
-          echo "CONFIG_RT2800USB=y" >> .config
-          
-          echo "Fixing Stack Protector Error..."
-          echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
-          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
-          
-          echo "Disabling BadUSB / HID gadget..."
-          echo "# CONFIG_USB_G_HID is not set" >> .config
-          echo "# CONFIG_USB_CONFIGFS_F_HID is not set" >> .config
-          
-          cd ../${{ env.kernelName }}
+          echo "Applying full NetHunter feature set..."
+
+          # 1. Стековый протектор (отключаем strong, включаем none)
+          scripts/config --disable CONFIG_CC_STACKPROTECTOR_STRONG || true
+          scripts/config --enable CONFIG_CC_STACKPROTECTOR_NONE   || true
+
+          # 2. Беспроводная сеть и мониторный режим
+          scripts/config --enable CONFIG_WIRELESS
+          scripts/config --enable CONFIG_CFG80211
+          scripts/config --enable CONFIG_MAC80211
+          scripts/config --enable CONFIG_CFG80211_WEXT
+          scripts/config --enable CONFIG_MAC80211_RC_DEFAULT_MINSTREL
+          scripts/config --enable CONFIG_MAC80211_MESH
+          scripts/config --enable CONFIG_CFG80211_DEBUGFS
+          scripts/config --enable CONFIG_MAC80211_DEBUGFS
+
+          # 3. USB Wi-Fi адаптеры
+          scripts/config --enable CONFIG_ATH_COMMON
+          scripts/config --enable CONFIG_ATH9K_HTC
+          scripts/config --enable CONFIG_CARL9170
+
+          scripts/config --enable CONFIG_RT2X00
+          scripts/config --enable CONFIG_RT2800USB
+          scripts/config --enable CONFIG_RT2800USB_RT53XX
+          scripts/config --enable CONFIG_RT2800USB_UNKNOWN
+
+          scripts/config --enable CONFIG_RTL8187
+          scripts/config --enable CONFIG_RTL8192CU
+          scripts/config --enable CONFIG_RTL8XXXU
+          scripts/config --enable CONFIG_RTL8192EU
+
+          scripts/config --enable CONFIG_ZD1211RW
+
+          scripts/config --enable CONFIG_MT76x2U
+          scripts/config --enable CONFIG_MT76x2U_DEBUGFS
+
+          # 4. USB Gadgets (BadUSB/HID)
+          scripts/config --enable CONFIG_USB_GADGET
+          scripts/config --enable CONFIG_USB_CONFIGFS
+          scripts/config --enable CONFIG_USB_CONFIGFS_F_HID
+          scripts/config --enable CONFIG_USB_G_HID
+
+          # 5. Сетевые утилиты
+          scripts/config --enable CONFIG_BRIDGE
+          scripts/config --enable CONFIG_VETH
+          scripts/config --enable CONFIG_TUN
+          scripts/config --enable CONFIG_NETFILTER
+          scripts/config --enable CONFIG_NF_CONNTRACK
+          scripts/config --enable CONFIG_IP_NF_IPTABLES
+          scripts/config --enable CONFIG_NETFILTER_XT_MATCH_STATE
+
+          # 6. Файловые системы
+          scripts/config --enable CONFIG_EXT4_FS
+          scripts/config --enable CONFIG_VFAT_FS
+          scripts/config --enable CONFIG_EXFAT_FS
+          scripts/config --enable CONFIG_NTFS_FS
+          scripts/config --enable CONFIG_OVERLAY_FS
+
+          # 7. BPF (для последних версий Kali)
+          scripts/config --enable CONFIG_BPF
+          scripts/config --enable CONFIG_BPF_SYSCALL
+
+          # Обновить .config и разрешить зависимости
           make ${{ env.args }} olddefconfig
 
       - name: "🎶 Build kernel"
