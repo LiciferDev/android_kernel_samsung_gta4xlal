@@ -1,142 +1,74 @@
 name: "Build NetHunter Kernel gta4xl"
 
-env:
-  CONFIGURATION: "repos.json"
-  OUT_DIR: "out"
-
 on:
   workflow_dispatch:
 
 jobs:
-  Set-repos:
-    name: "🐂 Parse repos.json"
-    runs-on: ubuntu-latest
-    outputs:
-      repos: ${{ steps.generate-matrix.outputs.repos }}
-    steps:
-      - name: "😄 Checkout"
-        uses: uses: actions/checkout@v4
-      - name: "Print repos.json"
-        run: cat ${{ env.CONFIGURATION }}
-      - name: "😆 Generate Matrix"
-        id: generate-matrix
-        run: |
-          echo "repos=$(jq -c . < ${{ env.CONFIGURATION }})" >> $GITHUB_OUTPUT
-
   Build-Kernel:
     name: "🐎 Build kernel"
     runs-on: ubuntu-latest
-    needs:
-      - Set-repos
-    strategy:
-      max-parallel: 2
-      fail-fast: false
-      matrix:
-        repos: ${{ fromJSON(needs.Set-repos.outputs.repos) }}
-    env:
-      kernelDir: ${{ matrix.repos.kernelSource.name }}_${{ matrix.repos.kernelSource.device }}
-      kernelName: ${{ matrix.repos.kernelSource.name }}
-      kernelRepo: ${{ matrix.repos.kernelSource.repo }}
-      kernelBranch: ${{ matrix.repos.kernelSource.branch }}
-      kernelDevice: ${{ matrix.repos.kernelSource.device }}
-      DEFCONFIG_NAME: ${{ matrix.repos.kernelSource.device }}_defconfig
-      withKernelSU: ${{ matrix.repos.withKernelSU }}
-      
+    
     steps:
-      - name: "✨ Create working dir"
-        run: mkdir -p $kernelDir
+      - name: "😄 Checkout"
+        uses: actions/checkout@v4
 
       - name: "⭐ Install prerequisites"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential bc curl git zip ftp gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev lftp zstd wget libfl-dev python3 libarchive-tools
+          sudo apt-get install -y build-essential bc curl git zip gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev zstd wget libfl-dev python3 libarchive-tools jq
 
-      - name: "🌟 Clone kernel source"
-        working-directory: ./${{ env.kernelDir }}
+      - name: "🌟 Clone Source & Toolchain"
         run: |
-         git clone --recursive --branch ${{ env.kernelBranch }} ${{ env.kernelRepo }} ${{ env.kernelName }} --depth=1
-
-      - name: "💫 Get toolchains"
-        working-directory: ./${{ env.kernelDir }}
-        env:
-          toolchains: "${{ toJSON(matrix.repos.toolchains) }}"
-        run: |
-          toolchains_num="$(echo $toolchains | jq 'length')"
-          for ((i=0;i<toolchains_num;i++)); do
-            name=$(echo $toolchains | jq -r ".[$i].name")
-            repo=$(echo $toolchains | jq -r ".[$i].repo")
-            branch=$(echo $toolchains | jq -r ".[$i].branch")
-            git clone --recursive --branch $branch $repo $name --depth=1
-            echo "$(pwd)/$name/bin" >> $GITHUB_PATH
-          done
-
-      - name: "😎 Set args"
-        id: generate-args
-        working-directory: ./${{ env.kernelDir }}
-        env:
-          params: "${{ toJSON(matrix.repos.params) }}"
-        run: |
-          ARCH=$(echo $params | jq -r ".ARCH")
-          CROSS_COMPILE=$(echo $params | jq -r ".CROSS_COMPILE")
-          echo "ARCH=$ARCH" >> $GITHUB_ENV
-          args="-j$(nproc --all) ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE"
-          if [ -n "${{ env.OUT_DIR }}" ]; then
-            mkdir -p $(pwd)/${{ env.OUT_DIR }}
-            args="$args O=$(pwd)/${{ env.OUT_DIR }}"
-          fi
-          echo "args=$args" >> $GITHUB_OUTPUT
+          # Вытаскиваем инфу из repos.json
+          REPO=$(jq -r '.kernelSource.repo' repos.json)
+          BRANCH=$(jq -r '.kernelSource.branch' repos.json)
+          
+          # Клонируем исходники ядра в папку source
+          git clone --depth=1 -b $BRANCH $REPO source
+          
+          # Клонируем тулчейн (компилятор)
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain
+          
+          # Прописываем путь к компилятору в систему
+          echo "$(pwd)/toolchain/bin" >> $GITHUB_PATH
 
       - name: "👍 Make defconfig"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        env:
-          args: ${{ steps.generate-args.outputs.args }}
-        run: make ${{ env.args }} ${{ env.DEFCONFIG_NAME }}
-
-      # --- ВОТ ТУТ НАШИ ГЛАВНЫЕ ИЗМЕНЕНИЯ ---
-      - name: "🏴‍☠️ NetHunter Wireless & Injection Patch"
-        env:
-          args: ${{ steps.generate-args.outputs.args }}
-        working-directory: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}
         run: |
-          echo "Applying Wireless Monitor Mode Patches..."
+          cd source
+          # Генерируем базовый конфиг во внешнюю папку out
+          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- gta4xl_defconfig
+
+      - name: "🏴‍☠️ NetHunter Wireless Patch"
+        run: |
+          # Вносим правки прямо в файл .config перед сборкой
+          cd out
+          echo "Applying wireless patches for Atheros AR9271..."
           
-          # 1. Активация беспроводного стека
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
           echo "CONFIG_CFG80211_WEXT=y" >> .config
           
-          # 2. Патчи для инъекций (Injection)
-          echo "CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y" >> .config
-          echo "CONFIG_MAC80211_RC_DEFAULT=\"minstrel_ht\"" >> .config
-          
-          # 3. Драйвер для Atheros AR9271 (Твой адаптер)
+          # Драйверы Atheros (Твой свисток)
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HW=y" >> .config
           echo "CONFIG_ATH9K_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
-          echo "CONFIG_ATH9K_HTC_DEBUGFS=y" >> .config
           
-          # 4. Драйверы для Ralink (RT3070/RT2800) - классика Kali
+          # Драйверы Ralink (RT3070 и др.)
           echo "CONFIG_RT2X00=y" >> .config
           echo "CONFIG_RT2800USB=y" >> .config
-          echo "CONFIG_RT2800USB_RT33XX=y" >> .config
-          echo "CONFIG_RT2800USB_RT53XX=y" >> .config
           
-          # 5. Отключаем HID/BadUSB (как ты и просил)
-          echo "# CONFIG_USB_G_HID is not set" >> .config
-          echo "# CONFIG_USB_CONFIGFS_F_HID is not set" >> .config
-
-          echo "Config modified! External Wi-Fi drivers set to 'Built-in'."
+          echo "Patching complete."
 
       - name: "🎶 Build kernel"
-        working-directory: ./${{ env.kernelDir }}/${{ env.kernelName }}
-        env:
-          args: ${{ steps.generate-args.outputs.args }}
-        run: make ${args}
+        run: |
+          cd source
+          # Запуск компиляции на всех ядрах процессора
+          make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
         with:
-          name: NetHunter-Kernel-${{ env.kernelDevice }}
-          path: ./${{ env.kernelDir }}/${{ env.OUT_DIR }}/arch/${{ env.ARCH }}/boot/Image.gz
+          name: NetHunter-Kernel-gta4xl
+          path: out/arch/arm64/boot/Image.gz
