@@ -19,30 +19,22 @@ jobs:
 
       - name: "🌟 Clone Source & Toolchain"
         run: |
-          # Вытаскиваем инфу из первого объекта в repos.json
           REPO=$(jq -r '.[0].kernelSource.repo' repos.json)
           BRANCH=$(jq -r '.[0].kernelSource.branch' repos.json)
-          echo "Cloning from $REPO branch $BRANCH"
-          
           git clone --depth=1 -b $BRANCH $REPO source
-          
-          # Качаем СОВРЕМЕННЫЙ тулчейн (GCC 10.3), так как старый (4.9) выдал ошибку
+          # Используем проверенный GCC для Android ядер
           git clone --depth=1 https://github.com/mvaisakh/gcc-arm64 toolchain
-          
-          # Прописываем путь к новому компилятору
           echo "$(pwd)/toolchain/bin" >> $GITHUB_PATH
 
       - name: "👍 Make defconfig"
         run: |
           DEVICE=$(jq -r '.[0].kernelSource.device' repos.json)
           cd source
-          # Используем новый тулчейн aarch64-elf-
           make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf- ${DEVICE}_defconfig
 
       - name: "🏴‍☠️ NetHunter Wireless Patch"
         run: |
           cd out
-          echo "Forcing Wireless Drivers for AR9271..."
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -61,9 +53,13 @@ jobs:
       - name: "🎶 Build kernel"
         run: |
           cd source
-          # Применяем дефолты и собираем с новым CROSS_COMPILE
+          # Добавляем принудительный линкер и эмуляцию для фикса VDSO
           make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf- olddefconfig
-          make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf-
+          make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-elf- \
+          LD=aarch64-elf-ld.bfd \
+          LD_LIBRARY_PATH=$(pwd)/../toolchain/lib \
+          KBUILD_LDFLAGS_MODULE="--emulation=aarch64elf" \
+          VDSO_LDFLAGS="-m aarch64elf"
 
       - name: "💙 Upload Image.gz"
         uses: actions/upload-artifact@v4
