@@ -19,24 +19,15 @@ jobs:
 
       - name: "🌟 Clone Source & Toolchain"
         run: |
-          # Исправленный поиск данных в массиве repos.json
           REPO=$(jq -r '.[0].kernelSource.repo' repos.json)
           BRANCH=$(jq -r '.[0].kernelSource.branch' repos.json)
-          
           echo "Cloning from $REPO branch $BRANCH"
-          
-          # Клонируем исходники ядра в папку source
           git clone --depth=1 -b $BRANCH $REPO source
-          
-          # Клонируем компилятор
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 toolchain
-          
-          # Прописываем пути к бинарникам
           echo "$(pwd)/toolchain/bin" >> $GITHUB_PATH
 
       - name: "👍 Make defconfig"
         run: |
-          # Вытаскиваем имя устройства для конфига
           DEVICE=$(jq -r '.[0].kernelSource.device' repos.json)
           cd source
           make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- ${DEVICE}_defconfig
@@ -45,33 +36,28 @@ jobs:
         run: |
           cd out
           echo "Forcing Wireless Drivers for AR9271..."
-          
-          # Базовая поддержка Wi-Fi
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
           echo "CONFIG_CFG80211_WEXT=y" >> .config
-          
-          # Драйвер для твоего Atheros AR9271 (0cf3:9271)
+          echo "CONFIG_MAC80211_RC_MINSTREL=y" >> .config
+          echo "CONFIG_MAC80211_RC_MINSTREL_HT=y" >> .config
+          echo "CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y" >> .config
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HW=y" >> .config
           echo "CONFIG_ATH9K_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
           echo "CONFIG_ATH9K_HTC_DEBUGFS=y" >> .config
-          
-          # Патчи для инъекций
-          echo "CONFIG_MAC80211_RC_DEFAULT_MINSTREL=y" >> .config
-          echo "CONFIG_MAC80211_RC_DEFAULT=\"minstrel_ht\"" >> .config
-          
-          # Поддержка Ralink (RT3070)
           echo "CONFIG_RT2X00=y" >> .config
           echo "CONFIG_RT2800USB=y" >> .config
-          
-          echo "Patching complete."
 
       - name: "🎶 Build kernel"
         run: |
           cd source
+          # ВОТ ТУТ ГЛАВНОЕ ИСПРАВЛЕНИЕ:
+          # Применяем дефолты для новых конфигов, чтобы не было 'aborted'
+          make O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- olddefconfig
+          # И погнали саму сборку
           make -j$(nproc --all) O=../out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android-
 
       - name: "💙 Upload Image.gz"
