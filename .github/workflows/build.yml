@@ -200,15 +200,6 @@ jobs:
           echo "CONFIG_UHID=y" >> .config
           echo "CONFIG_HIDRAW=y" >> .config
 
-          # BadUSB / USB Gadget (только HID и проверенные опции)
-          echo "CONFIG_USB_GADGET=y" >> .config
-          echo "CONFIG_USB_CONFIGFS=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
-          echo "CONFIG_USB_G_HID=y" >> .config
-          echo "CONFIG_USB_G_ANDROID=y" >> .config
-          echo "CONFIG_OF_CONFIGFS=y" >> .config
-          echo "CONFIG_OF_OVERLAY=y" >> .config
-
           # Сетевые инструменты
           echo "CONFIG_BRIDGE=y" >> .config
           echo "CONFIG_VETH=y" >> .config
