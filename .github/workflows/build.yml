@@ -136,7 +136,7 @@ jobs:
         run: |
           echo "=== Applying NetHunter feature set ==="
 
-          # Маркер ядра и /proc/config.gz
+          # Маркер ядра для NetHunter и /proc/config.gz
           echo "CONFIG_LOCALVERSION=\"-NetHunter\"" >> .config
           grep -q "CONFIG_LOCALVERSION_AUTO=y" .config && \
             sed -i 's/CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config || \
@@ -173,14 +173,6 @@ jobs:
           echo "CONFIG_ZD1211RW=y" >> .config
           echo "CONFIG_MT76x2U=y" >> .config
           echo "CONFIG_MT76x2U_DEBUGFS=y" >> .config
-
-          # Bluetooth (расширенный: LE, RFCOMM TTY, но без UHID/HIDRAW)
-          echo "CONFIG_BT=y" >> .config
-          echo "CONFIG_BT_RFCOMM=y" >> .config
-          echo "CONFIG_BT_RFCOMM_TTY=y" >> .config
-          echo "CONFIG_BT_HIDP=y" >> .config
-          echo "CONFIG_BT_HCIBTUSB=y" >> .config
-          echo "CONFIG_BT_LE=y" >> .config
 
           # USB-гаджеты и BadUSB/HID
           echo "CONFIG_USB_GADGET=y" >> .config
