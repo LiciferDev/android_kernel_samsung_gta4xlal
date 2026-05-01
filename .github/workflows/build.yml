@@ -134,9 +134,9 @@ jobs:
         env:
           args: ${{ steps.generate-args.outputs.args }}
         run: |
-          echo "=== Applying complete NetHunter feature set ==="
+          echo "=== Applying NetHunter feature set ==="
 
-          # Маркер ядра для NetHunter
+          # Маркер ядра, чтобы NetHunter видел его как кастомное
           echo "CONFIG_LOCALVERSION=\"-NetHunter\"" >> .config
           grep -q "CONFIG_LOCALVERSION_AUTO=y" .config && \
             sed -i 's/CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config || \
@@ -150,7 +150,7 @@ jobs:
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
-          # Беспроводной стек + мониторный режим
+          # Wi-Fi мониторинг + драйверы (ровно как в рабочем варианте)
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -160,45 +160,35 @@ jobs:
           echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
           echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
-          # Вендорные настройки Wi-Fi
-          echo "CONFIG_WLAN_VENDOR_ATH=y" >> .config
-          echo "CONFIG_WLAN_VENDOR_RALINK=y" >> .config
-          echo "CONFIG_WLAN_VENDOR_REALTEK=y" >> .config
-          echo "CONFIG_WLAN_VENDOR_ZYDAS=y" >> .config
-
-          # Atheros
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
           echo "CONFIG_CARL9170=y" >> .config
-
-          # Ralink / MediaTek
           echo "CONFIG_RT2X00=y" >> .config
           echo "CONFIG_RT2800USB=y" >> .config
-          echo "CONFIG_RT2800USB_RT33XX=y" >> .config
-          echo "CONFIG_RT2800USB_RT35XX=y" >> .config
           echo "CONFIG_RT2800USB_RT53XX=y" >> .config
           echo "CONFIG_RT2800USB_UNKNOWN=y" >> .config
-          echo "CONFIG_MT7601U=y" >> .config
-
-          # Realtek
-          echo "CONFIG_RTL_CARDS=y" >> .config
           echo "CONFIG_RTL8187=y" >> .config
           echo "CONFIG_RTL8192CU=y" >> .config
           echo "CONFIG_RTL8XXXU=y" >> .config
           echo "CONFIG_RTL8192EU=y" >> .config
-
-          # ZyDAS
           echo "CONFIG_ZD1211RW=y" >> .config
+          echo "CONFIG_MT76x2U=y" >> .config
+          echo "CONFIG_MT76x2U_DEBUGFS=y" >> .config
 
-          # Bluetooth (полный стек)
+          # Bluetooth (базовый, без UHID/HIDRAW/LE, которые могут тянуть лишнее)
           echo "CONFIG_BT=y" >> .config
           echo "CONFIG_BT_RFCOMM=y" >> .config
-          echo "CONFIG_BT_RFCOMM_TTY=y" >> .config
           echo "CONFIG_BT_HIDP=y" >> .config
           echo "CONFIG_BT_HCIBTUSB=y" >> .config
-          echo "CONFIG_BT_LE=y" >> .config
-          echo "CONFIG_UHID=y" >> .config
-          echo "CONFIG_HIDRAW=y" >> .config
+
+          # BadUSB / USB Gadget HID (работало)
+          echo "CONFIG_USB_GADGET=y" >> .config
+          echo "CONFIG_USB_CONFIGFS=y" >> .config
+          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
+          echo "CONFIG_USB_G_HID=y" >> .config
+          echo "CONFIG_USB_G_ANDROID=y" >> .config
+          echo "CONFIG_OF_CONFIGFS=y" >> .config
+          echo "CONFIG_OF_OVERLAY=y" >> .config
 
           # Сетевые инструменты
           echo "CONFIG_BRIDGE=y" >> .config
