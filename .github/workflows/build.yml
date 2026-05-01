@@ -178,9 +178,8 @@ jobs:
           echo "CONFIG_RT2800USB_RT33XX=y" >> .config
           echo "CONFIG_RT2800USB_RT35XX=y" >> .config
           echo "CONFIG_RT2800USB_RT53XX=y" >> .config
-          echo "CONFIG_RT2800USB_RT55XX=y" >> .config
           echo "CONFIG_RT2800USB_UNKNOWN=y" >> .config
-          echo "CONFIG_MT7601U=y" >> .config
+          echo "CONFIG_MT7601U=y" >> .config  # Добавлен важный драйвер
 
           # Realtek
           echo "CONFIG_RTL_CARDS=y" >> .config
@@ -192,9 +191,6 @@ jobs:
           # ZyDAS
           echo "CONFIG_ZD1211RW=y" >> .config
 
-          # RNDIS Wi-Fi
-          echo "CONFIG_USB_NET_RNDIS_WLAN=y" >> .config
-
           # Bluetooth (полный стек)
           echo "CONFIG_BT=y" >> .config
           echo "CONFIG_BT_RFCOMM=y" >> .config
@@ -205,21 +201,16 @@ jobs:
           echo "CONFIG_UHID=y" >> .config
           echo "CONFIG_HIDRAW=y" >> .config
 
-          # USB-гаджеты и BadUSB/HID
+          # BadUSB / USB Gadget & HID (без проблемных опций)
           echo "CONFIG_USB_GADGET=y" >> .config
           echo "CONFIG_USB_CONFIGFS=y" >> .config
           echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
           echo "CONFIG_USB_G_HID=y" >> .config
           echo "CONFIG_USB_G_ANDROID=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_RNDIS=y" >> .config
           echo "CONFIG_USB_CONFIGFS_SERIAL=y" >> .config
           echo "CONFIG_USB_CONFIGFS_ACM=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_OBEX=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_NCM=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_ECM=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_ECM_SUBSET=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_EEM=y" >> .config
           echo "CONFIG_USB_CONFIGFS_MASS_STORAGE=y" >> .config
+          echo "CONFIG_USB_CONFIGFS_RNDIS=y" >> .config  # Важно для RNDIS
           echo "CONFIG_USB_ETH=y" >> .config
           echo "CONFIG_OF_CONFIGFS=y" >> .config
           echo "CONFIG_OF_OVERLAY=y" >> .config
