@@ -136,9 +136,8 @@ jobs:
         run: |
           echo "=== Applying complete NetHunter feature set ==="
 
-          # Маркер ядра для NetHunter (видит как кастом)
+          # Маркер ядра для NetHunter
           echo "CONFIG_LOCALVERSION=\"-NetHunter\"" >> .config
-          # Отключаем автоматический хеш, чтобы версия была именно с -NetHunter
           grep -q "CONFIG_LOCALVERSION_AUTO=y" .config && \
             sed -i 's/CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config || \
             echo "# CONFIG_LOCALVERSION_AUTO is not set" >> .config
@@ -161,7 +160,7 @@ jobs:
           echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
           echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
-          # Вендорные настройки Wi-Fi (чтобы точно включились драйверы)
+          # Вендорные настройки Wi-Fi
           echo "CONFIG_WLAN_VENDOR_ATH=y" >> .config
           echo "CONFIG_WLAN_VENDOR_RALINK=y" >> .config
           echo "CONFIG_WLAN_VENDOR_REALTEK=y" >> .config
@@ -179,7 +178,7 @@ jobs:
           echo "CONFIG_RT2800USB_RT35XX=y" >> .config
           echo "CONFIG_RT2800USB_RT53XX=y" >> .config
           echo "CONFIG_RT2800USB_UNKNOWN=y" >> .config
-          echo "CONFIG_MT7601U=y" >> .config  # Добавлен важный драйвер
+          echo "CONFIG_MT7601U=y" >> .config
 
           # Realtek
           echo "CONFIG_RTL_CARDS=y" >> .config
@@ -201,17 +200,12 @@ jobs:
           echo "CONFIG_UHID=y" >> .config
           echo "CONFIG_HIDRAW=y" >> .config
 
-          # BadUSB / USB Gadget & HID (без проблемных опций)
+          # BadUSB / USB Gadget (только HID и проверенные опции)
           echo "CONFIG_USB_GADGET=y" >> .config
           echo "CONFIG_USB_CONFIGFS=y" >> .config
           echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
           echo "CONFIG_USB_G_HID=y" >> .config
           echo "CONFIG_USB_G_ANDROID=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_SERIAL=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_ACM=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_MASS_STORAGE=y" >> .config
-          echo "CONFIG_USB_CONFIGFS_RNDIS=y" >> .config  # Важно для RNDIS
-          echo "CONFIG_USB_ETH=y" >> .config
           echo "CONFIG_OF_CONFIGFS=y" >> .config
           echo "CONFIG_OF_OVERLAY=y" >> .config
 
