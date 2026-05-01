@@ -136,13 +136,11 @@ jobs:
         run: |
           echo "=== Applying NetHunter feature set ==="
 
-          # Маркер ядра, чтобы NetHunter видел его как кастомное
+          # Маркер ядра для NetHunter и /proc/config.gz
           echo "CONFIG_LOCALVERSION=\"-NetHunter\"" >> .config
           grep -q "CONFIG_LOCALVERSION_AUTO=y" .config && \
             sed -i 's/CONFIG_LOCALVERSION_AUTO=y/# CONFIG_LOCALVERSION_AUTO is not set/' .config || \
             echo "# CONFIG_LOCALVERSION_AUTO is not set" >> .config
-
-          # /proc/config.gz
           echo "CONFIG_IKCONFIG=y" >> .config
           echo "CONFIG_IKCONFIG_PROC=y" >> .config
 
@@ -150,7 +148,7 @@ jobs:
           echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> .config
           sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/g' .config
 
-          # Wi-Fi мониторинг + драйверы (ровно как в рабочем варианте)
+          # Беспроводной стек + мониторный режим
           echo "CONFIG_WIRELESS=y" >> .config
           echo "CONFIG_CFG80211=y" >> .config
           echo "CONFIG_MAC80211=y" >> .config
@@ -160,6 +158,7 @@ jobs:
           echo "CONFIG_CFG80211_DEBUGFS=y" >> .config
           echo "CONFIG_MAC80211_DEBUGFS=y" >> .config
 
+          # Wi-Fi адаптеры (Atheros, Ralink, Realtek, ZyDAS, MediaTek)
           echo "CONFIG_ATH_COMMON=y" >> .config
           echo "CONFIG_ATH9K_HTC=y" >> .config
           echo "CONFIG_CARL9170=y" >> .config
@@ -175,13 +174,7 @@ jobs:
           echo "CONFIG_MT76x2U=y" >> .config
           echo "CONFIG_MT76x2U_DEBUGFS=y" >> .config
 
-          # Bluetooth (базовый, без UHID/HIDRAW/LE, которые могут тянуть лишнее)
-          echo "CONFIG_BT=y" >> .config
-          echo "CONFIG_BT_RFCOMM=y" >> .config
-          echo "CONFIG_BT_HIDP=y" >> .config
-          echo "CONFIG_BT_HCIBTUSB=y" >> .config
-
-          # BadUSB / USB Gadget HID (работало)
+          # USB-гаджеты и BadUSB/HID
           echo "CONFIG_USB_GADGET=y" >> .config
           echo "CONFIG_USB_CONFIGFS=y" >> .config
           echo "CONFIG_USB_CONFIGFS_F_HID=y" >> .config
