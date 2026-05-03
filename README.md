@@ -1,6 +1,1 @@
-This repo is a fixed version of the "Bluejay kali nethunter kernel repo'
-
-
-
-
-set kernelsu to true in repos.json if you want to use kernelsu (not for gta4xl)
+Gta4Xl Kernel Nethunter + Github Action (юзайте на свой страх и риск, используйте только Liangle Os 22.1, собирал лично для себя для работы внешними свистками (после прошивки ядра обезательно закиньте через magisk модуль "Wireless Firmware for Nethunter")
